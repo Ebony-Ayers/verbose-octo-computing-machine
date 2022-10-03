@@ -1,4 +1,7 @@
 #include "pch.h"
+#include <array>
+#include <immintrin.h>
+#include <algorithm>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wfloat-conversion"
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
@@ -14,6 +17,10 @@
 #include "stb/stb_image_write.h"
 #pragma GCC diagnostic pop
 
+using PS_8 = __m256;
+using Pi32_8 = __m256i;
+using Mask_8 = __mmask8;
+
 float maxF(float a, float b)
 {
 	return (a * (a>b)) + (b * (a<=b));
@@ -28,101 +35,101 @@ float func(float x, float y)
 	return absF( (y-std::sin(x)) * (maxF(absF(x+y)+absF(x-y)-1.0f,0.0f) + maxF(0.25f-(x*x)-(y*y),0.0f)) );
 }
 
-void threadFunction(unsigned char* imageData, size_t iStart, size_t iEnd, float threshold, int width, int height, float viewWindowTopLeftCornerX, float viewWindowTopLeftCornerY, float viewWindowBottomRightCornerX, float viewWindowBottomRightCornerY, int subdivisionResolution, float subdivisionThreshold)
+
+
+
+
+template<float val>
+constexpr void constSetPS(PS_8& reg)
 {
-	size_t startPixleX = iStart % static_cast<size_t>(width);
-	size_t startPixleY = iStart / static_cast<size_t>(height);
-	float startX = viewWindowTopLeftCornerX + ((viewWindowBottomRightCornerX - viewWindowTopLeftCornerX) * (static_cast<float>(startPixleX) / static_cast<float>(width)));
+	*reinterpret_cast<std::array<float, 8>*>(&reg) = {val, val, val, val, val, val, val, val};
+}
+template<int32_t val>
+constexpr void constSetPi32(Pi32_8& reg)
+{
+	*reinterpret_cast<std::array<int32_t, 8>*>(&reg) = {val, val, val, val, val, val, val, val};
+}
+const PS_8 FPABS_SIGN_BIT_MASK = _mm256_castsi256_ps(_mm256_set1_epi32(0x80000000));
+
+
+
+
+
+void threadFunction(unsigned char* imageData, size_t startPixleY, size_t endPixleY, float threshold, int width, int height, float viewWindowTopLeftCornerX, float viewWindowTopLeftCornerY, float viewWindowBottomRightCornerX, float viewWindowBottomRightCornerY, int subdivisionResolution, float subdivisionThreshold)
+{
+	float startX = viewWindowTopLeftCornerX;
 	float startY = viewWindowTopLeftCornerY - ((viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) * (static_cast<float>(startPixleY) / static_cast<float>(width)));
 
 	float xIncrement = (viewWindowBottomRightCornerX - viewWindowTopLeftCornerX) / static_cast<float>(width);
-	float cumulativeXIncrement = viewWindowBottomRightCornerX - viewWindowTopLeftCornerX;
 	float yIncrement = (viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) / static_cast<float>(height);
 
-	float x = startX;
-	float y = startY;
+	//float x = startX;
+	//float y = startY;
 	
-	if(subdivisionResolution == 1)
+	//generate a vector of x values starting at startX and incrementing by xIncrement
+	//r3 = (xIncrement * r1) + startX
+	PS_8 r1;
+	*reinterpret_cast<std::array<float, 8>*>(&r1) = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
+	PS_8 r2 = _mm256_set1_ps(xIncrement);
+	PS_8 r3 = _mm256_set1_ps(startX);
+	r3 = _mm256_fmadd_ps(r2, r1, r3);
+
+	//generate a vector to increase r3 by each iteration
+	//r2 = xIncrement * 8;
+	*reinterpret_cast<std::array<float, 8>*>(&r1) = {8.0f, 8.0f, 8.0f, 8.0f, 8.0f, 8.0f, 8.0f, 8.0f};
+	r2 = _mm256_set1_ps(xIncrement);
+	r2 = _mm256_mul_ps(r2, r1);
+
+	//generate a vector of the y values. They will stay constant
+	//r1 is a tempuary value for the first two steps and is no longer needed so can be reused.
+	r1 = _mm256_set1_ps(startY);
+	PS_8 r4 = _mm256_set1_ps(yIncrement);
+	
+	//r1 = y
+	//r2 = xIncrement adjusted for SIMD
+	//r3 = x
+	//r4 = yIncrement
+	
+	size_t endPixleX = static_cast<size_t>(width);
+	for(size_t i = startPixleY; i < endPixleY; i++)
 	{
-		for(size_t i = iStart; i < iEnd; i++)
+		for(size_t j = 0; j < endPixleX; j+=8)
 		{
-			char showPixle = func(x,y) > threshold;
-			imageData[i] = static_cast<unsigned char>(showPixle * 255);
+			#include "function.cpp"
 			
-			x += xIncrement;
-			x -= cumulativeXIncrement * (i % static_cast<size_t>(width) == 0);
-			if(i % static_cast<size_t>(width) == 0)
+			float* val = reinterpret_cast<float*>(&r5);
+			for(size_t k = 0; k < 8; k++)
 			{
-				x = viewWindowTopLeftCornerX;
-			}
-			y -= yIncrement * (i % static_cast<size_t>(width) == 0);
-		}
-	}
-	else
-	{
-		for(size_t i = iStart; i < iEnd; i++)
-		{
-			auto res = func(x,y);
-			if(res < threshold)
-			{
-				imageData[i] = 0;
-			}
-			else if(res < subdivisionThreshold)
-			{
-				imageData[i] = 255;
-			
-				float smallXIncrement = xIncrement / subdivisionResolution;
-				float smallYIncrement = yIncrement / subdivisionResolution;
-				
-				float newX = x;
-				float newY = y;
-				for(size_t j = 0; j < subdivisionResolution; j++)
+				/*
+				if(val[k] < threshold) [[unlikely]]
 				{
-					bool shouldBreak = false;
-					newX = x;
-					for(size_t k = 0; k < subdivisionResolution; k++)
-					{
-						if(func(newX,newY) < threshold*10)
-						{
-							imageData[i] = 0;
-							shouldBreak = true;
-							break;
-						}
-						newX += smallXIncrement;
-					}
-					if(shouldBreak) { break; }
-					newY -= smallYIncrement;
+					std::cout << ((i * width) + j + k) << std::endl;
 				}
-			}
-			else
-			{
-				imageData[i] = 255;
+				*/
+				std::cout << "y=" << i << ", x=" << (j+k) << " " << val[k] << "\n";
 			}
 			
-			x += xIncrement;
-			x -= cumulativeXIncrement * (i % static_cast<size_t>(width) == 0);
-			if(i % static_cast<size_t>(width) == 0)
-			{
-				x = viewWindowTopLeftCornerX;
-			}
-			y -= yIncrement * (i % static_cast<size_t>(width) == 0);
+			r6 = _mm256_set1_ps(threshold);
+			r5 = _mm256_cmp_ps(r5, r6, _CMP_GT_OQ);
+			
+			_mm256_storeu_ps(reinterpret_cast<float*>(imageData) + (i * width) + j, r5);
+			
+			r3 = _mm256_add_ps(r3, r2); //x += xIncrement
 		}
+		r1 = _mm256_add_ps(r1, r4); // y += yIncrement
 	}
 }
-void threadFunctionContour(unsigned char* imageData, size_t iStart, size_t iEnd, float threshold, int width, int height, float viewWindowTopLeftCornerX, float viewWindowTopLeftCornerY, float viewWindowBottomRightCornerX, float viewWindowBottomRightCornerY)
+void threadFunctionContour(unsigned char* imageData, size_t startPixleY, size_t endPixleY, float threshold, int width, int height, float viewWindowTopLeftCornerX, float viewWindowTopLeftCornerY, float viewWindowBottomRightCornerX, float viewWindowBottomRightCornerY)
 {
-	size_t startPixleX = iStart % static_cast<size_t>(width);
-	size_t startPixleY = iStart / static_cast<size_t>(height);
-	float startX = viewWindowTopLeftCornerX + ((viewWindowBottomRightCornerX - viewWindowTopLeftCornerX) * (static_cast<float>(startPixleX) / static_cast<float>(width)));
+	float startX = viewWindowTopLeftCornerX;
 	float startY = viewWindowTopLeftCornerY - ((viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) * (static_cast<float>(startPixleY) / static_cast<float>(width)));
 	
 	float xIncrement = (viewWindowBottomRightCornerX - viewWindowTopLeftCornerX) / static_cast<float>(width);
-	float cumulativeXIncrement = viewWindowBottomRightCornerX - viewWindowTopLeftCornerX;
 	float yIncrement = (viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) / static_cast<float>(height);
 	
 	float x = startX;
 	float y = startY;
-	for(size_t i = iStart; i < iEnd; i++)
+	for(size_t i = startPixleY * static_cast<size_t>(width); i < endPixleY * static_cast<size_t>(width); i++)
 	{
 		auto res = func(x,y);
 		if(res > (threshold * 524288))
@@ -152,10 +159,10 @@ void threadFunctionContour(unsigned char* imageData, size_t iStart, size_t iEnd,
 		
 		
 		x += xIncrement;
-		x -= cumulativeXIncrement * (i % static_cast<size_t>(width) == 0);
+		//x -= cumulativeXIncrement * (i % static_cast<size_t>(width) == 0);
 		if(i % static_cast<size_t>(width) == 0)
 		{
-			x = viewWindowTopLeftCornerX;
+			x = startX;
 		}
 		y -= yIncrement * (i % static_cast<size_t>(width) == 0);
 	}	
@@ -214,28 +221,43 @@ int main(int argc, char* argv[])
 		subdivisionThreshold = std::stof(argv[10]);
 	}
 	
-	unsigned char* imageData = new unsigned char[width * height];
+	//unsigned char* imageData = new unsigned char[width * height];
+	unsigned char* imageData = reinterpret_cast<unsigned char*>(std::aligned_alloc(64, ((((width * height) / 64) * 64) + 64) * sizeof(unsigned char) * 4));
 	
 	unsigned int numThreads = std::thread::hardware_concurrency();
 	if(numThreads == 0) { numThreads = 1; }
 	std::thread* threads = new std::thread[numThreads];
 	std::cout << "using " << numThreads << " threads" << std::endl;
-	for(size_t i = 0; i < numThreads; i++)
 	{
-		size_t amountToProcessPerThread = static_cast<size_t>(width * height) / numThreads;
+		size_t numRowsToProcessPerThread = static_cast<size_t>(height) / numThreads;
 		
+		size_t i;
+		for(i = 0; i < numThreads-1; i++)
+		{			
+			if(showContours)
+			{
+				//threads[i] = std::thread(threadFunctionContour, imageData, numRowsToProcessPerThread * i, numRowsToProcessPerThread * (i+1), threshold, width, height, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY, viewWindowBottomRightCornerX, viewWindowBottomRightCornerY);
+			}
+			else
+			{
+				threads[i] = std::thread(threadFunction, imageData, numRowsToProcessPerThread * i, numRowsToProcessPerThread * (i+1), threshold, width, height, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY, viewWindowBottomRightCornerX, viewWindowBottomRightCornerY, subdivisionResolution, subdivisionThreshold);
+				threads[i].join();
+			}
+		}
 		if(showContours)
 		{
-			threads[i] = std::thread(threadFunctionContour, imageData, amountToProcessPerThread * i, amountToProcessPerThread * (i+1), threshold, width, height, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY, viewWindowBottomRightCornerX, viewWindowBottomRightCornerY);
+			//threads[i] = std::thread(threadFunctionContour, imageData, numRowsToProcessPerThread * i, static_cast<size_t>(height), threshold, width, height, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY, viewWindowBottomRightCornerX, viewWindowBottomRightCornerY);
+			std::cout << "contours not supported" << std::endl;
 		}
 		else
 		{
-			threads[i] = std::thread(threadFunction, imageData, amountToProcessPerThread * i, amountToProcessPerThread * (i+1), threshold, width, height, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY, viewWindowBottomRightCornerX, viewWindowBottomRightCornerY, subdivisionResolution, subdivisionThreshold);
+			threads[i] = std::thread(threadFunction, imageData, numRowsToProcessPerThread * i, static_cast<size_t>(height), threshold, width, height, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY, viewWindowBottomRightCornerX, viewWindowBottomRightCornerY, subdivisionResolution, subdivisionThreshold);
+			threads[i].join();
 		}
-	}
-	for(size_t i = 0; i < numThreads; i++)
-	{
-		threads[i].join();
+		for(size_t j = 0; j < numThreads; j++)
+		{
+			//threads[j].join();
+		}
 	}
 	delete[] threads;
 	
@@ -244,9 +266,10 @@ int main(int argc, char* argv[])
 	auto t2 = std::chrono::time_point_cast<std::chrono::microseconds>(startTime).time_since_epoch().count();
 	std::cout << "Time taken: " << ((t1 - t2) * 0.001f) << "ms" << std::endl;
 	
-	stbi_write_png("image.png", width, height, 1, imageData, static_cast<int>(sizeof(char))*width);
+	stbi_write_png("image.png", width, height, 4, imageData, static_cast<int>(sizeof(char))*width);
 	
-	delete[] imageData;
+	//delete[] imageData;
+	std::free(imageData);
 	
 	return 0;
 }
