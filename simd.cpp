@@ -97,17 +97,17 @@ void threadFunction(unsigned char* imageData, size_t startPixleY, size_t endPixl
 		{
 			#include "function.cpp"
 			
+			/*
 			float* val = reinterpret_cast<float*>(&r5);
 			for(size_t k = 0; k < 8; k++)
 			{
-				/*
 				if(val[k] < threshold) [[unlikely]]
 				{
 					std::cout << ((i * width) + j + k) << std::endl;
 				}
-				*/
-				std::cout << "y=" << i << ", x=" << (j+k) << " " << val[k] << "\n";
+				//std::cout << "y=" << i << ", x=" << (j+k) << " " << val[k] << "\n";
 			}
+			*/
 			
 			r6 = _mm256_set1_ps(threshold);
 			r5 = _mm256_cmp_ps(r5, r6, _CMP_GT_OQ);
@@ -228,7 +228,7 @@ int main(int argc, char* argv[])
 	if(numThreads == 0) { numThreads = 1; }
 	std::thread* threads = new std::thread[numThreads];
 	std::cout << "using " << numThreads << " threads" << std::endl;
-	{
+	/*{
 		size_t numRowsToProcessPerThread = static_cast<size_t>(height) / numThreads;
 		
 		size_t i;
@@ -258,8 +258,23 @@ int main(int argc, char* argv[])
 		{
 			//threads[j].join();
 		}
-	}
+	}*/
 	delete[] threads;
+	
+	float values[8] = {0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 1.0f, 1.1f};
+	PS_8 r1 = _mm256_loadu_ps(values);
+	PS_8 r3 = _mm256_loadu_ps(values);
+	#include "function.cpp"
+	float outputs[8] = {-1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, -1.0f};
+	_mm256_storeu_ps(outputs, r5);
+	
+	for(size_t i = 0; i < 8; i++)
+	{
+		std::cout << outputs[i] << " ";
+		
+		std::cout << (values[i] - std::sin(values[i])) << std::endl;
+	}
+	
 	
 	TimeType endTime = std::chrono::high_resolution_clock::now();
 	auto t1 = std::chrono::time_point_cast<std::chrono::microseconds>(endTime).time_since_epoch().count();
