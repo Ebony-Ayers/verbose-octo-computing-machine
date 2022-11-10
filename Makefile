@@ -4,14 +4,14 @@ ifeq ($(PLATFORM), mac)
 else
 	COMPILER = ccache g++
 endif
-CLFAGS = -std=c++20 -ggdb
+CLFAGS = -std=c++20 -ggdb -march=native
 LDFLAGS = 
 DEBUG_FLAGS = -DDEBUG -ggdb
 WARNINGS = -Wall -Wextra -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual -Wpedantic -Wconversion -Wsign-conversion -Wnull-dereference -Wdouble-promotion -Wformat=2
 ifeq ($(PLATFORM), linux)
 	WARNINGS += -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches -Wlogical-op -Wuseless-cast
 endif
-SIMD_FLAGS = -mavx -mavx2 -march=native
+SIMD_FLAGS = -mavx -mavx2
 PCH = pch.h.gch
 
 .PHONY: debug
@@ -20,8 +20,8 @@ debug: scalarGrapher.out simdGrapher.out Makefile
 
 .PHONY: release
 release: scalar.cpp simd.cpp $(PCH) Makefile
-	$(COMPILER) $(CLFAGS) -O3 -o scalarGrapher.out scalar.cpp $(LDFLAGS)
-	$(COMPILER) $(CLFAGS) -O3 $(SIMD_FLAGS) -o simdGrapher.out simd.cpp $(LDFLAGS)
+	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher.out scalar.cpp $(LDFLAGS)
+	$(COMPILER) $(CLFAGS) -Ofast $(SIMD_FLAGS) -o simdGrapher.out simd.cpp $(LDFLAGS)
 
 simdGrapher.out: simd.o $(PCH) Makefile
 	$(COMPILER) $(CLFAGS) $(WARNINGS) $(DEBUG_FLAGS) $(SIMD_FLAGS) -o simdGrapher.out simd.o $(LDFLAGS)
