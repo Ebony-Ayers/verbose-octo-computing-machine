@@ -22,6 +22,9 @@ debug: scalarGrapher.out simdGrapher.out Makefile
 release: scalar.cpp simd.cpp $(PCH) Makefile
 	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher.out scalar.cpp $(LDFLAGS)
 	$(COMPILER) $(CLFAGS) -Ofast $(SIMD_FLAGS) -o simdGrapher.out simd.cpp $(LDFLAGS)
+.PHONY: releaseNoSIMD
+release: scalar.cpp simd.cpp $(PCH) Makefile
+	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher.out scalar.cpp $(LDFLAGS)
 
 simdGrapher.out: simd.o $(PCH) Makefile
 	$(COMPILER) $(CLFAGS) $(WARNINGS) $(DEBUG_FLAGS) $(SIMD_FLAGS) -o simdGrapher.out simd.o $(LDFLAGS)
