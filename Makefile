@@ -23,7 +23,7 @@ release: scalar.cpp simd.cpp $(PCH) Makefile
 	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher.out scalar.cpp $(LDFLAGS)
 	$(COMPILER) $(CLFAGS) -Ofast $(SIMD_FLAGS) -o simdGrapher.out simd.cpp $(LDFLAGS)
 .PHONY: releaseNoSIMD
-release: scalar.cpp simd.cpp $(PCH) Makefile
+releaseNoSIMD: scalar.cpp simd.cpp $(PCH) Makefile
 	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher.out scalar.cpp $(LDFLAGS)
 
 simdGrapher.out: simd.o $(PCH) Makefile
