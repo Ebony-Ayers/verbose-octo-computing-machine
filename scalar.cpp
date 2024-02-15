@@ -46,23 +46,23 @@ constexpr float func(float x, float y)
 	//return absF( (y-std::sin(x)) * (maxF(absF(x+y)+absF(x-y)-1.0f,0.0f) + maxF(0.25f-(x*x)-(y*y),0.0f)) );
 }
 
-void threadFunction(unsigned char* imageData, size_t startPixleY, size_t endPixleY, float threshold, int width, int height, float viewWindowTopLeftCornerX, float viewWindowTopLeftCornerY, float viewWindowBottomRightCornerX, float viewWindowBottomRightCornerY, int subdivisionResolution, float subdivisionThreshold)
+void threadFunction(unsigned char* imageData, const float& threshold, const size_t& width, const size_t& height, const float& viewWindowTopLeftCornerX, const float& viewWindowTopLeftCornerY, const float& viewWindowBottomRightCornerX, const float& viewWindowBottomRightCornerY, const int& subdivisionResolution, const float& subdivisionThreshold)
 {
-	float startX = viewWindowTopLeftCornerX;
-	float startY = viewWindowTopLeftCornerY - ((viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) * (static_cast<float>(startPixleY) / static_cast<float>(width)));
+	const float startX = viewWindowTopLeftCornerX;
+	const float startY = viewWindowTopLeftCornerY;
 
-	float xIncrement = (viewWindowBottomRightCornerX - viewWindowTopLeftCornerX) / static_cast<float>(width);
-	float cumulativeXIncrement = viewWindowBottomRightCornerX - viewWindowTopLeftCornerX;
-	float yIncrement = (viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) / static_cast<float>(height);
+	const float xIncrement = (viewWindowBottomRightCornerX - viewWindowTopLeftCornerX) / static_cast<float>(width);
+	const float cumulativeXIncrement = viewWindowBottomRightCornerX - viewWindowTopLeftCornerX;
+	const float yIncrement = (viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) / static_cast<float>(height);
 	
-	size_t startIndex = startPixleY * static_cast<size_t>(width);
-	size_t endIndex = endPixleY * static_cast<size_t>(width);
+	const size_t startIndex = 0;
+	const size_t endIndex = height * width;
+
+	const size_t subdivisionResolutionSizeT = static_cast<size_t>(subdivisionResolution);
+	const float subdivisionResolutionFloat = static_cast<float>(subdivisionResolution);
 
 	float x = startX;
 	float y = startY;
-	
-	size_t subdivisionResolutionSizeT = static_cast<size_t>(subdivisionResolution);
-	float subdivisionResolutionFloat = static_cast<float>(subdivisionResolution);
 	
 	if(subdivisionResolution == 1)
 	{
@@ -87,12 +87,12 @@ void threadFunction(unsigned char* imageData, size_t startPixleY, size_t endPixl
 			auto res = func(x,y);
 			if(res < threshold)
 			{
+				
 				imageData[i] = 0;
 			}
 			else if(res < subdivisionThreshold)
 			{
 				imageData[i] = 255;
-			
 				float smallXIncrement = xIncrement / subdivisionResolutionFloat;
 				float smallYIncrement = yIncrement / subdivisionResolutionFloat;
 				
@@ -131,139 +131,73 @@ void threadFunction(unsigned char* imageData, size_t startPixleY, size_t endPixl
 		}
 	}
 }
-void threadFunctionContour(unsigned char* imageData, size_t iStart, size_t iEnd, float threshold, int width, int height, float viewWindowTopLeftCornerX, float viewWindowTopLeftCornerY, float viewWindowBottomRightCornerX, float viewWindowBottomRightCornerY)
-{
-	size_t startPixleX = iStart % static_cast<size_t>(width);
-	size_t startPixleY = iStart / static_cast<size_t>(height);
-	float startX = viewWindowTopLeftCornerX + ((viewWindowBottomRightCornerX - viewWindowTopLeftCornerX) * (static_cast<float>(startPixleX) / static_cast<float>(width)));
-	float startY = viewWindowTopLeftCornerY - ((viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) * (static_cast<float>(startPixleY) / static_cast<float>(width)));
-	
-	float xIncrement = (viewWindowBottomRightCornerX - viewWindowTopLeftCornerX) / static_cast<float>(width);
-	float cumulativeXIncrement = viewWindowBottomRightCornerX - viewWindowTopLeftCornerX;
-	float yIncrement = (viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) / static_cast<float>(height);
-	
-	float x = startX;
-	float y = startY;
-	for(size_t i = iStart; i < iEnd; i++)
-	{
-		auto res = func(x,y);
-		if(res > (threshold * 524288))
-		{
-			imageData[i] = 255;
-		}
-		else if(res > (threshold * 131072))
-		{
-			imageData[i] = 204;
-		}
-		else if(res > (threshold * 32768))
-		{
-			imageData[i] = 153;
-		}
-		else if(res > (threshold * 8192))
-		{
-			imageData[i] = 102;
-		}
-		else if(res > (threshold * 2048))
-		{
-			imageData[i] = 51;
-		}
-		else
-		{
-			imageData[i] = 0;
-		}
-		
-		
-		x += xIncrement;
-		x -= cumulativeXIncrement * (i % static_cast<size_t>(width) == 0);
-		if(i % static_cast<size_t>(width) == 0)
-		{
-			x = viewWindowTopLeftCornerX;
-		}
-		y -= yIncrement * (i % static_cast<size_t>(width) == 0);
-	}	
-}
 
 int main(int argc, char* argv[])
 {
 	typedef	std::chrono::time_point<std::chrono::high_resolution_clock> TimeType;
 	TimeType startTime = std::chrono::high_resolution_clock::now();
 
-	bool showContours = false;
+	float threshold = 0.01f;
 	if(argc >= 2)
 	{
-		showContours = std::strcmp(argv[1], "true") == 0;
-	}
-	float threshold = 0.01f;
-	if(argc >= 3)
-	{
-		threshold = std::stof(argv[2]);
+		threshold = std::stof(argv[1]);
 	}
 	float viewWindowTopLeftCornerX = -10.0f;
 	float viewWindowTopLeftCornerY = 10.0f;
 	float viewWindowBottomRightCornerX = 10.0f;
 	float viewWindowBottomRightCornerY = -10.0f;
-	if(argc == 4)
+	if(argc == 3)
 	{
-		viewWindowTopLeftCornerX = -1.0f * std::stof(argv[3]);
+		viewWindowTopLeftCornerX = -1.0f * std::stof(argv[2]);
 		viewWindowTopLeftCornerY = viewWindowTopLeftCornerX;
 		viewWindowBottomRightCornerX = viewWindowTopLeftCornerX;
 		viewWindowBottomRightCornerY = -1.0f * viewWindowTopLeftCornerX;
 	}
-	if(argc >= 7)
+	if(argc >= 6)
 	{
-		viewWindowTopLeftCornerX = std::stof(argv[3]);
-		viewWindowTopLeftCornerY = std::stof(argv[4]);
-		viewWindowBottomRightCornerX = std::stof(argv[5]);
-		viewWindowBottomRightCornerY = std::stof(argv[6]);
+		viewWindowTopLeftCornerX = std::stof(argv[2]);
+		viewWindowTopLeftCornerY = std::stof(argv[3]);
+		viewWindowBottomRightCornerX = std::stof(argv[4]);
+		viewWindowBottomRightCornerY = std::stof(argv[5]);
 	}
 	int width = 1024;
 	int height = 1024;
-	if(argc == 8)
+	if(argc == 7)
 	{
-		width = std::stoi(argv[7]);
+		width = std::stoi(argv[6]);
 		height = width;
 	}
-	else if(argc >= 9)
+	else if(argc >= 8)
 	{
-		width = std::stoi(argv[7]);
-		height = std::stoi(argv[8]);
+		width = std::stoi(argv[6]);
+		height = std::stoi(argv[7]);
 	}
 	int subdivisionResolution = 1;
 	float subdivisionThreshold = threshold;
-	if(argc >= 11)
+	if(argc >= 10)
 	{
-		subdivisionResolution = std::stoi(argv[9]);
-		subdivisionThreshold = std::stof(argv[10]);
+		subdivisionResolution = std::stoi(argv[8]);
+		subdivisionThreshold = std::stof(argv[9]);
 	}
 	
 	unsigned char* imageData = new unsigned char[width * height];
+	//std::fill(imageData, imageData + (width * height), 255);
 	
 	unsigned int numThreads = std::thread::hardware_concurrency();
 	if(numThreads == 0) { numThreads = 1; }
 	std::thread* threads = new std::thread[numThreads];
 	std::cout << "using " << numThreads << " threads" << std::endl;
 	{
-		size_t numRowsToProcessPerThread = static_cast<size_t>(height) / numThreads;
+		const size_t numRowsToProcessPerThread = static_cast<size_t>(height) / numThreads;
+		const float viewWindowToProcessPerThread = (viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) / static_cast<float>(numThreads);
+		const size_t pointerOffsetPerThread = static_cast<size_t>(width) * numRowsToProcessPerThread;
 		size_t i;
 		for(i = 0; i < numThreads-1; i++)
 		{
-			if(showContours)
-			{
-				threads[i] = std::thread(threadFunctionContour, imageData, numRowsToProcessPerThread * i, numRowsToProcessPerThread * (i+1), threshold, width, height, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY, viewWindowBottomRightCornerX, viewWindowBottomRightCornerY);
-			}
-			else
-			{
-				threads[i] = std::thread(threadFunction, imageData, numRowsToProcessPerThread * i, numRowsToProcessPerThread * (i+1), threshold, width, height, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY, viewWindowBottomRightCornerX, viewWindowBottomRightCornerY, subdivisionResolution, subdivisionThreshold);
-			}
+			threads[i] = std::thread(threadFunction, imageData + (i * pointerOffsetPerThread), threshold, width, numRowsToProcessPerThread, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i)), viewWindowBottomRightCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i+1)), subdivisionResolution, subdivisionThreshold);
 		}
-		if(showContours)
-		{
-			threads[i] = std::thread(threadFunctionContour, imageData, numRowsToProcessPerThread * i, static_cast<size_t>(height), threshold, width, height, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY, viewWindowBottomRightCornerX, viewWindowBottomRightCornerY);
-		}
-		else
-		{
-			threads[i] = std::thread(threadFunction, imageData, numRowsToProcessPerThread * i, static_cast<size_t>(height), threshold, width, height, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY, viewWindowBottomRightCornerX, viewWindowBottomRightCornerY, subdivisionResolution, subdivisionThreshold);
-		}
+		const size_t numRowsToProcessFinalThread = static_cast<size_t>(height) - (numRowsToProcessPerThread * (numThreads - 1));
+		threads[i] = std::thread(threadFunction, imageData + (i * pointerOffsetPerThread), threshold, width, numRowsToProcessFinalThread, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i)), viewWindowBottomRightCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i+1)), subdivisionResolution, subdivisionThreshold);
 	}
 	for(size_t i = 0; i < numThreads; i++)
 	{
