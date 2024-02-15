@@ -31,6 +31,7 @@ constexpr float negSinF(float x)
 	return t1+t2+t3+t4+t5+t6;
 }
 
+//branchless math operations
 constexpr float maxF(float a, float b)
 {
 	return (a * (a>b)) + (b * (a<=b));
@@ -40,6 +41,7 @@ constexpr float absF(float n)
 	return (n * (n>0.0f)) + (-n * (n<=0.0f));
 }
 
+//function we are graphing
 constexpr float func(float x, float y)
 {
 	return std::fabs( (y-std::sin(x)) * (std::fmax(std::fabs(x+y)+std::fabs(x-y)-1.0f,0.0f) + std::fmax(0.25f-(x*x)-(y*y),0.0f)) );
@@ -48,16 +50,20 @@ constexpr float func(float x, float y)
 
 void threadFunction(unsigned char* imageData, const float& threshold, const size_t& width, const size_t& height, const float& viewWindowTopLeftCornerX, const float& viewWindowTopLeftCornerY, const float& viewWindowBottomRightCornerX, const float& viewWindowBottomRightCornerY, const int& subdivisionResolution, const float& subdivisionThreshold)
 {
+	//this is a remenant of when every thread was aware of the entire image buffer. I have descided to leave it here incase I ever wish to go back
 	const float startX = viewWindowTopLeftCornerX;
 	const float startY = viewWindowTopLeftCornerY;
 
+	//pre compute how much the in graph space to move each iteration
 	const float xIncrement = (viewWindowBottomRightCornerX - viewWindowTopLeftCornerX) / static_cast<float>(width);
 	const float cumulativeXIncrement = viewWindowBottomRightCornerX - viewWindowTopLeftCornerX;
 	const float yIncrement = (viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) / static_cast<float>(height);
 	
+	//this is a remenant of when every thread was aware of the entire image buffer. I have descided to leave it here incase I ever wish to go back
 	const size_t startIndex = 0;
 	const size_t endIndex = height * width;
 
+	//type casting ahead of time
 	const size_t subdivisionResolutionSizeT = static_cast<size_t>(subdivisionResolution);
 	const float subdivisionResolutionFloat = static_cast<float>(subdivisionResolution);
 
@@ -134,9 +140,7 @@ void threadFunction(unsigned char* imageData, const float& threshold, const size
 
 int main(int argc, char* argv[])
 {
-	typedef	std::chrono::time_point<std::chrono::high_resolution_clock> TimeType;
-	TimeType startTime = std::chrono::high_resolution_clock::now();
-
+	//process command line arguments
 	float threshold = 0.01f;
 	if(argc >= 2)
 	{
@@ -180,38 +184,49 @@ int main(int argc, char* argv[])
 		subdivisionThreshold = std::stof(argv[9]);
 	}
 	
+	//allocate the image pixle buffer
 	unsigned char* imageData = new unsigned char[width * height];
 	//std::fill(imageData, imageData + (width * height), 255);
 	
+	//get the number of threads to work with
 	unsigned int numThreads = std::thread::hardware_concurrency();
 	if(numThreads == 0) { numThreads = 1; }
 	std::thread* threads = new std::thread[numThreads];
 	std::cout << "using " << numThreads << " threads" << std::endl;
+	
+	//pre compute various parameters for the threading process
+	const size_t numRowsToProcessPerThread = static_cast<size_t>(height) / numThreads;
+	const float viewWindowToProcessPerThread = (viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) / static_cast<float>(numThreads);
+	const size_t pointerOffsetPerThread = static_cast<size_t>(width) * numRowsToProcessPerThread;
+	const size_t numRowsToProcessFinalThread = static_cast<size_t>(height) - (numRowsToProcessPerThread * (numThreads - 1));
+
+	//start the timer
+	typedef	std::chrono::time_point<std::chrono::high_resolution_clock> TimeType;
+	TimeType startTime = std::chrono::high_resolution_clock::now();
 	{
-		const size_t numRowsToProcessPerThread = static_cast<size_t>(height) / numThreads;
-		const float viewWindowToProcessPerThread = (viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) / static_cast<float>(numThreads);
-		const size_t pointerOffsetPerThread = static_cast<size_t>(width) * numRowsToProcessPerThread;
+		//start the first n-1 threads
 		size_t i;
 		for(i = 0; i < numThreads-1; i++)
 		{
 			threads[i] = std::thread(threadFunction, imageData + (i * pointerOffsetPerThread), threshold, width, numRowsToProcessPerThread, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i)), viewWindowBottomRightCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i+1)), subdivisionResolution, subdivisionThreshold);
 		}
-		const size_t numRowsToProcessFinalThread = static_cast<size_t>(height) - (numRowsToProcessPerThread * (numThreads - 1));
+		//start the last thread. this must be done seperatly as it will also be responsible for processing any rows missed by the truncating nature of integer division
 		threads[i] = std::thread(threadFunction, imageData + (i * pointerOffsetPerThread), threshold, width, numRowsToProcessFinalThread, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i)), viewWindowBottomRightCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i+1)), subdivisionResolution, subdivisionThreshold);
 	}
 	for(size_t i = 0; i < numThreads; i++)
 	{
 		threads[i].join();
 	}
-	delete[] threads;
-	
+	//end the clock and calculate the time
 	TimeType endTime = std::chrono::high_resolution_clock::now();
 	auto t1 = std::chrono::time_point_cast<std::chrono::microseconds>(endTime).time_since_epoch().count();
 	auto t2 = std::chrono::time_point_cast<std::chrono::microseconds>(startTime).time_since_epoch().count();
 	std::cout << "Time taken: " << (static_cast<float>(t1 - t2) * 0.001f) << "ms" << std::endl;
 	
+	//write the image
 	stbi_write_png("image.png", width, height, 1, imageData, static_cast<int>(sizeof(char))*width);
 	
+	delete[] threads;
 	delete[] imageData;
 	
 	return 0;
