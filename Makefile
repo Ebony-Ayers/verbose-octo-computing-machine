@@ -15,20 +15,20 @@ SIMD_FLAGS = -mavx -mavx2
 PCH = pch.h.gch
 
 .PHONY: debug
-debug: scalarGrapher_v1.out scalarGrapher_v2.out simdGrapher.out Makefile
+debug: scalarGrapher_v1.out scalarGrapher_v2.out scalarGrapher_v3.out simdGrapher.out Makefile
 	
 
 .PHONY: release
 release: scalar_v1.cpp simd.cpp $(PCH) Makefile
 	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher_v1.out scalar_v1.cpp $(LDFLAGS)
 	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher_v2.out scalar_v2.cpp $(LDFLAGS)
-	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher_v2.out scalar_v3.cpp $(LDFLAGS)
+	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher_v3.out scalar_v3.cpp $(LDFLAGS)
 	$(COMPILER) $(CLFAGS) -Ofast $(SIMD_FLAGS) -o simdGrapher.out simd.cpp $(LDFLAGS)
 .PHONY: releaseNoSIMD
 releaseNoSIMD: scalar_v1.cpp simd.cpp $(PCH) Makefile
 	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher_v1.out scalar_v1.cpp $(LDFLAGS)
 	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher_v2.out scalar_v2.cpp $(LDFLAGS)
-	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher_v2.out scalar_v3.cpp $(LDFLAGS)
+	$(COMPILER) $(CLFAGS) -Ofast -o scalarGrapher_v3.out scalar_v3.cpp $(LDFLAGS)
 
 simdGrapher.out: simd.o $(PCH) Makefile
 	$(COMPILER) $(CLFAGS) $(WARNINGS) $(DEBUG_FLAGS) $(SIMD_FLAGS) -o simdGrapher.out simd.o $(LDFLAGS)

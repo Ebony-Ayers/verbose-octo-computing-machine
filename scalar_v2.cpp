@@ -188,52 +188,68 @@ int main(int argc, char* argv[])
 		subdivisionResolution = std::stoi(argv[8]);
 		subdivisionThreshold = std::stof(argv[9]);
 	}
+	int numRuns = 1;
+	if(argc >= 11)
+	{
+		numRuns = std::stoi(argv[10]);
+	}
 	
 	//allocate the image pixle buffer
 	unsigned char* imageData = new unsigned char[width * height];
-	//std::fill(imageData, imageData + (width * height), 255);
-	
+
 	//get the number of threads to work with
 	unsigned int numThreads = std::thread::hardware_concurrency();
 	if(numThreads == 0) { numThreads = 1; }
-	std::thread* threads = new std::thread[numThreads];
 	std::cout << "using " << numThreads << " threads" << std::endl;
 	
-	//pre compute various parameters for the threading process
-	const size_t numRowsToProcessPerThread = static_cast<size_t>(height) / numThreads;
-	const float viewWindowToProcessPerThread = (viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) / static_cast<float>(numThreads);
-	const size_t pointerOffsetPerThread = static_cast<size_t>(width) * numRowsToProcessPerThread;
-	const size_t numRowsToProcessFinalThread = static_cast<size_t>(height) - (numRowsToProcessPerThread * (numThreads - 1));
-
-	//start the timer
-	typedef	std::chrono::time_point<std::chrono::high_resolution_clock> TimeType;
-	TimeType startTime = std::chrono::high_resolution_clock::now();
+	//run the computation the desired number of times to get an average of the runtime
+	auto temp1 = std::chrono::high_resolution_clock::now();
+	auto temp2 = std::chrono::time_point_cast<std::chrono::microseconds>(temp1).time_since_epoch().count();
+	auto currentTime = temp2 - temp2;
+	decltype(currentTime-currentTime) totalTime = currentTime;
+	for(int j = 0; j < numRuns; j++)
 	{
-		//start the first n-1 threads
-		size_t i;
-		for(i = 0; i < numThreads-1; i++)
+		std::fill(imageData, imageData + (width * height), 0);
+
+		std::thread* threads = new std::thread[numThreads];
+		
+		//pre compute various parameters for the threading process
+		const size_t numRowsToProcessPerThread = static_cast<size_t>(height) / numThreads;
+		const float viewWindowToProcessPerThread = (viewWindowTopLeftCornerY - viewWindowBottomRightCornerY) / static_cast<float>(numThreads);
+		const size_t pointerOffsetPerThread = static_cast<size_t>(width) * numRowsToProcessPerThread;
+		const size_t numRowsToProcessFinalThread = static_cast<size_t>(height) - (numRowsToProcessPerThread * (numThreads - 1));
+
+		//start the timer
+		typedef	std::chrono::time_point<std::chrono::high_resolution_clock> TimeType;
+		TimeType startTime = std::chrono::high_resolution_clock::now();
 		{
-			threads[i] = std::thread(threadFunction, imageData + (i * pointerOffsetPerThread), threshold, width, numRowsToProcessPerThread, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i)), viewWindowBottomRightCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i+1)), subdivisionResolution, subdivisionThreshold);
+			//start the first n-1 threads
+			size_t i;
+			for(i = 0; i < numThreads-1; i++)
+			{
+				threads[i] = std::thread(threadFunction, imageData + (i * pointerOffsetPerThread), threshold, width, numRowsToProcessPerThread, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i)), viewWindowBottomRightCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i+1)), subdivisionResolution, subdivisionThreshold);
+			}
+			//start the last thread. this must be done seperatly as it will also be responsible for processing any rows missed by the truncating nature of integer division
+			threads[i] = std::thread(threadFunction, imageData + (i * pointerOffsetPerThread), threshold, width, numRowsToProcessFinalThread, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i)), viewWindowBottomRightCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i+1)), subdivisionResolution, subdivisionThreshold);
+		}
+		for(size_t i = 0; i < numThreads; i++)
+		{
 			threads[i].join();
 		}
-		//start the last thread. this must be done seperatly as it will also be responsible for processing any rows missed by the truncating nature of integer division
-		threads[i] = std::thread(threadFunction, imageData + (i * pointerOffsetPerThread), threshold, width, numRowsToProcessFinalThread, viewWindowTopLeftCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i)), viewWindowBottomRightCornerX, viewWindowTopLeftCornerY - (viewWindowToProcessPerThread * static_cast<float>(i+1)), subdivisionResolution, subdivisionThreshold);
-		threads[i].join();
+
+		//end the clock and calculate the time
+		TimeType endTime = std::chrono::high_resolution_clock::now();
+		auto t1 = std::chrono::time_point_cast<std::chrono::microseconds>(endTime).time_since_epoch().count();
+		auto t2 = std::chrono::time_point_cast<std::chrono::microseconds>(startTime).time_since_epoch().count();
+		totalTime += (t1 - t2);
+
+		delete[] threads;
 	}
-	for(size_t i = 0; i < numThreads; i++)
-	{
-		//threads[i].join();
-	}
-	//end the clock and calculate the time
-	TimeType endTime = std::chrono::high_resolution_clock::now();
-	auto t1 = std::chrono::time_point_cast<std::chrono::microseconds>(endTime).time_since_epoch().count();
-	auto t2 = std::chrono::time_point_cast<std::chrono::microseconds>(startTime).time_since_epoch().count();
-	std::cout << "Time taken: " << (static_cast<float>(t1 - t2) * 0.001f) << "ms" << std::endl;
+	std::cout << "Time taken: " << ((static_cast<float>(totalTime) / static_cast<float>(numRuns)) * 0.001f) << "ms" << std::endl;
 	
 	//write the image
 	stbi_write_png("image.png", width, height, 1, imageData, static_cast<int>(sizeof(char))*width);
 	
-	delete[] threads;
 	delete[] imageData;
 	
 	return 0;
